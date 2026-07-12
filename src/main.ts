@@ -2,19 +2,19 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: [
-      'http://localhost:3001',
-      'http://127.0.0.1:3001',
-    ],
+    origin: ['http://localhost:3001', 'http://127.0.0.1:3001'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Accept', 'x-api-key', 'Authorization'],
     credentials: true,
   });
 
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.setGlobalPrefix('v1');
   app.useGlobalPipes(
     new ValidationPipe({
@@ -29,9 +29,13 @@ async function bootstrap(): Promise<void> {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('FleetFlow API')
-    .setDescription('On-demand logistics and courier dispatch system')
+    .setDescription('Enterprise on-demand logistics and courier dispatch platform')
     .setVersion('1.0.0')
+    .addApiKey({ type: 'apiKey', name: 'x-api-key', in: 'header' }, 'x-api-key')
+    .addBearerAuth()
+    .addTag('auth')
     .addTag('orders')
+    .addTag('health')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);

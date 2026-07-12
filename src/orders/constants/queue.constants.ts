@@ -1,13 +1,13 @@
-export const ORDER_DISPATCH_QUEUE = 'order-dispatch-queue' as const;
+export const DISPATCH_QUEUE = 'dispatch-queue' as const;
 
-export const MATCH_DRIVER_JOB = 'match-driver' as const;
+export const DISPATCH_JOB = 'dispatch-order' as const;
 
-export interface MatchDriverJobPayload {
+export const MATCH_RADIUS_KM = 10;
+
+export const PLATFORM_FEE_RATE = 0.1;
+
+export interface DispatchJobPayload {
   orderId: string;
   merchantId: string;
-  pickupAddress: string;
-  deliveryAddress: string;
-  packageWeight: number;
-  packageType: string;
   enqueuedAt: string;
 }

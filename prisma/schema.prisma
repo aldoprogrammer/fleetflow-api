@@ -7,33 +7,163 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum VehicleType {
+  BIKE
+  CAR
+  TRUCK
+}
+
 enum OrderStatus {
+  DRAFT
   PENDING
+  MATCHING
   ASSIGNED
   PICKED_UP
   DELIVERED
   CANCELLED
 }
 
-enum PackageType {
-  DOCUMENT
-  PARCEL
-  BULK
+enum DriverStatus {
+  AVAILABLE
+  ON_TRIP
+  OFFLINE
+}
+
+enum TxType {
+  DEBIT
+  CREDIT
+}
+
+enum UserRole {
+  SUPERADMIN
+  REGIONAL_MANAGER
+  HEAD_OF_WAREHOUSE
+  FLEET_OPERATOR
+  MERCHANT_ADMIN
+  DRIVER_PARTNER
+}
+
+model Merchant {
+  id           String        @id @default(uuid()) @db.Uuid
+  companyName  String
+  email        String        @unique
+  balance      Float         @default(0)
+  apiKey       String        @unique
+  orders       Order[]
+  transactions Transaction[]
+  users        User[]
+  createdAt    DateTime      @default(now())
+
+  @@index([apiKey])
+  @@map("merchants")
+}
+
+model Vehicle {
+  id          String      @id @default(uuid()) @db.Uuid
+  plateNumber String      @unique
+  type        VehicleType
+  capacityKg  Float
+  driver      Driver?
+
+  @@map("vehicles")
+}
+
+model Driver {
+  id           String        @id @default(uuid()) @db.Uuid
+  fullName     String
+  phone        String        @unique
+  status       DriverStatus  @default(AVAILABLE)
+  currentLat   Float
+  currentLng   Float
+  vehicleId    String        @unique @db.Uuid
+  vehicle      Vehicle       @relation(fields: [vehicleId], references: [id])
+  orders       Order[]
+  transactions Transaction[]
+  users        User[]
+  createdAt    DateTime      @default(now())
+
+  @@index([status])
+  @@index([currentLat, currentLng])
+  @@map("drivers")
 }
 
 model Order {
-  id              String       @id @default(uuid()) @db.Uuid
-  merchantId      String
-  pickupAddress   String
-  deliveryAddress String
-  packageWeight   Float
-  packageType     PackageType
-  status          OrderStatus  @default(PENDING)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id                  String          @id @default(uuid()) @db.Uuid
+  merchantId          String          @db.Uuid
+  merchant            Merchant        @relation(fields: [merchantId], references: [id])
+  vehicleTypeRequired VehicleType
+  pickupAddress       String
+  deliveryAddress     String
+  pickupLat           Float
+  pickupLng           Float
+  deliveryLat         Float
+  deliveryLng         Float
+  status              OrderStatus     @default(DRAFT)
+  assignedDriverId    String?         @db.Uuid
+  assignedDriver      Driver?         @relation(fields: [assignedDriverId], references: [id])
+  price               Float
+  matchDistanceKm     Float?
+  packageDescription  String?
+  packageWeightKg     Float?
+  createdByUserId     String?         @db.Uuid
+  createdBy           User?           @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
+  timeline            OrderTimeline[]
+  createdAt           DateTime        @default(now())
 
   @@index([merchantId])
   @@index([status])
+  @@index([assignedDriverId])
   @@index([createdAt])
   @@map("orders")
+}
+
+model OrderTimeline {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  note      String
+  createdAt DateTime    @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("order_timelines")
+}
+
+model Transaction {
+  id          String    @id @default(uuid()) @db.Uuid
+  driverId    String?   @db.Uuid
+  driver      Driver?   @relation(fields: [driverId], references: [id])
+  merchantId  String?   @db.Uuid
+  merchant    Merchant? @relation(fields: [merchantId], references: [id])
+  amount      Float
+  type        TxType
+  description String
+  createdAt   DateTime  @default(now())
+
+  @@index([driverId])
+  @@index([merchantId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String
+  displayName  String
+  role         UserRole
+  isActive     Boolean   @default(true)
+  merchantId   String?   @db.Uuid
+  merchant     Merchant? @relation(fields: [merchantId], references: [id])
+  driverId     String?   @db.Uuid
+  driver       Driver?   @relation(fields: [driverId], references: [id])
+  createdOrders Order[]  @relation("OrderCreatedBy")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([role])
+  @@index([merchantId])
+  @@index([driverId])
+  @@map("users")
 }

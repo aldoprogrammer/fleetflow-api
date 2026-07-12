@@ -1,70 +1,83 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { PackageType } from '@prisma/client';
+import { VehicleType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsLatitude,
+  IsLongitude,
   IsNotEmpty,
-  IsNumber,
-  IsPositive,
+  IsOptional,
   IsString,
   IsUUID,
-  Max,
   MaxLength,
   MinLength,
 } from 'class-validator';
 
 export class CreateOrderDto {
-  @ApiProperty({
-    description: 'Merchant identifier that owns the dispatch order',
-    example: '550e8400-e29b-41d4-a716-446655440001',
-    format: 'uuid',
-  })
-  @IsUUID('4', { message: 'merchantId must be a valid UUID v4' })
-  merchantId!: string;
+  @ApiProperty({ enum: VehicleType, example: VehicleType.CAR })
+  @IsEnum(VehicleType)
+  vehicleTypeRequired!: VehicleType;
 
-  @ApiProperty({
-    description: 'Full pickup street address',
-    example: 'Jl. Thamrin No. 1, Jakarta Pusat',
-    minLength: 8,
-    maxLength: 240,
-  })
+  @ApiProperty({ example: 'Jl. Thamrin No. 1, Jakarta Pusat' })
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
   @MaxLength(240)
   pickupAddress!: string;
 
-  @ApiProperty({
-    description: 'Full delivery street address',
-    example: 'Jl. Sudirman No. 52, Jakarta Selatan',
-    minLength: 8,
-    maxLength: 240,
-  })
+  @ApiProperty({ example: 'Jl. Sudirman No. 52, Jakarta Selatan' })
   @IsString()
   @IsNotEmpty()
   @MinLength(8)
   @MaxLength(240)
   deliveryAddress!: string;
 
-  @ApiProperty({
-    description: 'Package weight in kilograms',
-    example: 2.5,
-    minimum: 0.1,
-    maximum: 1000,
-  })
+  @ApiProperty({ example: -6.2 })
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @IsPositive()
-  @Max(1000)
-  packageWeight!: number;
+  @IsLatitude()
+  pickupLat!: number;
+
+  @ApiProperty({ example: 106.816666 })
+  @Type(() => Number)
+  @IsLongitude()
+  pickupLng!: number;
+
+  @ApiProperty({ example: -6.17511 })
+  @Type(() => Number)
+  @IsLatitude()
+  deliveryLat!: number;
+
+  @ApiProperty({ example: 106.865036 })
+  @Type(() => Number)
+  @IsLongitude()
+  deliveryLng!: number;
 
   @ApiProperty({
-    description: 'Type of package being dispatched',
-    enum: PackageType,
-    example: PackageType.PARCEL,
+    required: false,
+    description:
+      'Required for platform roles without a linked merchant (e.g. Super Admin).',
   })
-  @IsEnum(PackageType, {
-    message: `packageType must be one of: ${Object.values(PackageType).join(', ')}`,
+  @IsOptional()
+  @IsUUID('4')
+  merchantId?: string;
+
+  @ApiProperty({
+    required: false,
+    example: '2 boxes electronics — fragile, handle with care',
+    description: 'Optional parcel summary for dispatch and driver briefing.',
   })
-  packageType!: PackageType;
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  packageDescription?: string;
+
+  @ApiProperty({
+    required: false,
+    example: 4.5,
+    description: 'Optional parcel weight in kilograms.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  packageWeightKg?: number;
 }

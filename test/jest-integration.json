@@ -1,0 +1,13 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testRegex": ".integration.spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "testEnvironment": "node",
+  "moduleNameMapper": {
+    "^@fleetflow/shared$": "<rootDir>/../../fleetflow-shared/src/index.ts",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  }
+}

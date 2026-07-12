@@ -1,18 +1,21 @@
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
-import { ORDER_DISPATCH_QUEUE } from './constants/queue.constants';
+import { AuthModule } from '../auth/auth.module';
+import { DISPATCH_QUEUE } from './constants/queue.constants';
+import { MatchingProcessor } from './matching.processor';
 import { OrdersController } from './orders.controller';
-import { OrdersProcessor } from './orders.processor';
 import { OrdersService } from './orders.service';
+import { PricingService } from './pricing/pricing.service';
 
 @Module({
   imports: [
+    AuthModule,
     BullModule.registerQueue({
-      name: ORDER_DISPATCH_QUEUE,
+      name: DISPATCH_QUEUE,
     }),
   ],
   controllers: [OrdersController],
-  providers: [OrdersService, OrdersProcessor],
+  providers: [OrdersService, MatchingProcessor, PricingService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

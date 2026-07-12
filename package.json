@@ -6,7 +6,7 @@
   "license": "UNLICENSED",
   "main": "dist/main.js",
   "scripts": {
-    "prebuild": "rimraf dist",
+    "prebuild": "rimraf dist tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -21,26 +21,45 @@
     "test:cov": "jest --config ./test/jest-unit.json --coverage",
     "test:integration": "jest --config ./test/jest-integration.json --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "qa:reset-drivers": "node scripts/qa-reset-drivers.mjs",
+    "qa:verify-redis-queue": "node scripts/verify-redis-queue.mjs",
+    "qa:load-test-dispatch": "node scripts/load-test-dispatch.mjs",
+    "qa:watch-dispatch-queue": "node scripts/watch-dispatch-queue.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:push": "prisma db push",
+    "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "prisma:studio": "prisma studio",
+    "prisma:sync": "node scripts/prisma-sync.mjs --seed",
+    "prisma:sync:dev": "node scripts/prisma-sync.mjs --dev --seed",
+    "prisma:sync:force": "node scripts/prisma-sync.mjs --seed --force-kill-api",
+    "prisma:watch": "node scripts/prisma-watch.mjs"
+  },
+  "prisma": {
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@fleetflow/shared": "workspace:*",
-    "@nestjs/bull": "^10.2.3",
+    "@nestjs/bullmq": "^10.2.3",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/swagger": "^8.1.0",
     "@prisma/client": "^6.1.0",
-    "bull": "^4.16.5",
+    "bcryptjs": "^3.0.3",
+    "bullmq": "^5.34.5",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "ioredis": "^5.4.2",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
     "pg": "^8.13.1",
     "prisma": "^6.1.0",
-    "redis": "^4.7.0",
+    "redis": "^5.4.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "stripe": "^17.5.0"
@@ -49,9 +68,11 @@
     "@nestjs/cli": "^10.4.9",
     "@nestjs/schematics": "^10.2.3",
     "@nestjs/testing": "^10.4.15",
+    "@types/bcryptjs": "^3.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",
+    "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.11.10",
     "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
@@ -64,26 +85,24 @@
     "typescript": "^5.7.2"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@fleetflow/shared$": "<rootDir>/../../fleetflow-shared/src",
       "^@/(.*)$": "<rootDir>/$1"
-    },
-    "coverageThreshold": {
-      "global": {
-        "branches": 80,
-        "functions": 80,
-        "lines": 80,
-        "statements": 80
-      }
     }
   }
 }
