@@ -70,6 +70,7 @@
     "@nestjs/testing": "^10.4.15",
     "@types/bcryptjs": "^3.0.0",
     "@types/express": "^5.0.0",
+    "@types/express-serve-static-core": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",
     "@types/passport-jwt": "^4.0.1",

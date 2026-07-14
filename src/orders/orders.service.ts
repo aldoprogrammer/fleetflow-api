@@ -88,6 +88,8 @@ type OrderDetailRecord = {
     id: string;
     fullName: string;
     phone: string;
+    currentLat: number;
+    currentLng: number;
     vehicle: { type: VehicleType };
   } | null;
   timeline: Array<{
@@ -553,6 +555,10 @@ export class OrdersService {
             phone: order.assignedDriver.phone,
 
             vehicleType: order.assignedDriver.vehicle.type,
+
+            currentLat: order.assignedDriver.currentLat,
+
+            currentLng: order.assignedDriver.currentLng,
 
           }
 

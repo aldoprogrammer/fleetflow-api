@@ -27,6 +27,12 @@ export class AssignedDriverDto {
 
   @ApiProperty({ enum: VehicleType })
   vehicleType!: VehicleType;
+
+  @ApiProperty({ description: 'Last known driver latitude (seed / GPS)' })
+  currentLat!: number;
+
+  @ApiProperty({ description: 'Last known driver longitude (seed / GPS)' })
+  currentLng!: number;
 }
 
 export class OrderMerchantDto {

@@ -8,7 +8,20 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: ['http://localhost:3001', 'http://127.0.0.1:3001'],
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      const allowed =
+        origin === 'http://localhost:3001' ||
+        origin === 'http://127.0.0.1:3001' ||
+        /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+      callback(null, allowed);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'x-api-key', 'Authorization'],
     credentials: true,
