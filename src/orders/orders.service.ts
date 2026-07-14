@@ -12,10 +12,11 @@ import {
 
 } from '@nestjs/common';
 
-import { DriverStatus, OrderStatus, UserRole, VehicleType } from '@prisma/client';
+import { DriverStatus, NotificationType, OrderStatus, UserRole, VehicleType } from '@prisma/client';
 
 import type { Queue } from 'bullmq';
 
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 import {
@@ -111,6 +112,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
 
     private readonly pricingService: PricingService,
+    private readonly notificationsService: NotificationsService,
 
     @InjectQueue(DISPATCH_QUEUE)
 
@@ -656,6 +658,15 @@ export class OrdersService {
 
 
 
+    await this.notificationsService.notifyOrderLifecycle({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      type: NotificationType.ORDER_PICKED_UP,
+      title: 'Parcel picked up',
+      body: 'Order is in transit to the destination.',
+    });
+
     return this.getOrderById(access, orderId);
 
   }
@@ -761,6 +772,15 @@ export class OrdersService {
     });
 
 
+
+    await this.notificationsService.notifyOrderLifecycle({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      type: NotificationType.ORDER_DELIVERED,
+      title: 'Delivery completed',
+      body: 'Booking finished successfully.',
+    });
 
     return this.getOrderById(access, orderId);
 

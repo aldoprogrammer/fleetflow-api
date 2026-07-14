@@ -209,8 +209,37 @@ The `dispatch-queue` BullMQ processor executes asynchronously after order creati
 2. Queries `AVAILABLE` drivers whose `Vehicle.type` matches `vehicleTypeRequired`
 3. Computes Haversine distance from driver coordinates to pickup point
 4. Selects closest driver within **10 km** radius
-5. On match: `ASSIGNED` order, `ON_TRIP` driver, merchant debit, driver credit (90% of price; 10% platform fee)
+5. On match: `ASSIGNED` order, `ON_TRIP` driver, merchant debit, driver credit (90% of price; 10% platform fee), then enqueue driver notification (`notification-queue` → Redis pub/sub)
 6. On no match: `CANCELLED` order with failure timeline note
+
+---
+
+## Driver Notifications (JWT)
+
+Requires permission `notifications:read` (seeded for `DRIVER_PARTNER` and ops roles via full SUPERADMIN set).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/notifications` | List inbox (`?unreadOnly=true` optional) |
+| GET | `/v1/notifications/unread-count` | `{ "count": number }` |
+| GET | `/v1/notifications/stream` | SSE realtime (Redis channel per user) |
+| PATCH | `/v1/notifications/:id/read` | Mark one read |
+| POST | `/v1/notifications/read-all` | Mark all read |
+
+Assignment creates a row with `type: ORDER_ASSIGNED`, then BullMQ job `deliver-notification` publishes JSON to `fleetflow:notifications:user:{userId}`.
+
+Later trip steps also notify:
+
+| Status | Type |
+|--------|------|
+| ASSIGNED | `ORDER_ASSIGNED` |
+| PICKED_UP | `ORDER_PICKED_UP` |
+| DELIVERED | `ORDER_DELIVERED` |
+| CANCELLED | `ORDER_CANCELLED` |
+
+Recipients: assigned driver users, merchant users for that order, and ops roles (`SUPERADMIN` / `REGIONAL_MANAGER` / `HEAD_OF_WAREHOUSE` / `FLEET_OPERATOR`).
+
+See `fleetflow-docs/DRIVER_NOTIFICATIONS.md`.
 
 ---
 

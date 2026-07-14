@@ -19,6 +19,8 @@ describe('MatchingProcessor', () => {
     vehicleTypeRequired: VehicleType.BIKE,
     pickupLat: -6.2,
     pickupLng: 106.816666,
+    pickupAddress: 'Jl. Thamrin No. 1',
+    deliveryAddress: 'Jl. Sudirman No. 52',
     price: 50000,
     merchant: { id: merchantId, balance: 1_000_000 },
   };
@@ -83,7 +85,13 @@ describe('MatchingProcessor', () => {
     };
 
     return {
-      processor: new MatchingProcessor(prisma as unknown as PrismaService),
+      processor: new MatchingProcessor(
+        prisma as unknown as PrismaService,
+        {
+          notifyOrderAssigned: jest.fn().mockResolvedValue(undefined),
+          notifyOrderLifecycle: jest.fn().mockResolvedValue(undefined),
+        } as never,
+      ),
       orderUpdates,
       driverUpdates,
     };

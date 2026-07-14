@@ -8,6 +8,7 @@ import { MerchantsModule } from './merchants/merchants.module';
 import { FleetModule } from './fleet/fleet.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { UsersModule } from './users/users.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { PrismaModule } from './prisma/prisma.module';
     FleetModule,
     LedgerModule,
     UsersModule,
+    NotificationsModule,
     OrdersModule,
   ],
 })

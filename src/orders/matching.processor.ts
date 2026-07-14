@@ -1,7 +1,13 @@
+import {
+  DriverStatus,
+  NotificationType,
+  OrderStatus,
+  TxType,
+} from '@prisma/client';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { DriverStatus, OrderStatus, TxType } from '@prisma/client';
 import type { Job } from 'bullmq';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DISPATCH_JOB,
@@ -16,7 +22,10 @@ import { findClosestDriverWithinRadius } from './matching/geo-matching.service';
 export class MatchingProcessor extends WorkerHost {
   private readonly logger = new Logger(MatchingProcessor.name);
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {
     super();
   }
 
@@ -104,10 +113,22 @@ export class MatchingProcessor extends WorkerHost {
       this.logger.warn(
         `[MatchingProcessor] Order ${orderId} cancelled — no driver in radius.`,
       );
+      await this.notificationsService.notifyOrderLifecycle({
+        orderId,
+        merchantId: order.merchantId,
+        type: NotificationType.ORDER_CANCELLED,
+        title: 'Order cancelled',
+        body: `No available ${order.vehicleTypeRequired} driver within ${MATCH_RADIUS_KM} km.`,
+        notifyDriver: false,
+        notifyMerchant: true,
+        notifyOps: true,
+      });
       return;
     }
 
     const driverPayout = Number((order.price * (1 - PLATFORM_FEE_RATE)).toFixed(2));
+    let assigned = false;
+    let cancelledInsufficientBalance = false;
 
     await this.prisma.$transaction(async (tx) => {
       const merchant = await tx.merchant.findUnique({
@@ -131,6 +152,7 @@ export class MatchingProcessor extends WorkerHost {
             },
           },
         });
+        cancelledInsufficientBalance = true;
         return;
       }
 
@@ -180,10 +202,38 @@ export class MatchingProcessor extends WorkerHost {
           description: `Driver payout (90%) for order ${orderId}`,
         },
       });
+
+      assigned = true;
     });
 
-    this.logger.log(
-      `[MatchingProcessor] Order ${orderId} assigned to driver ${candidate.fullName}.`,
-    );
+    if (cancelledInsufficientBalance) {
+      await this.notificationsService.notifyOrderLifecycle({
+        orderId,
+        merchantId: order.merchantId,
+        type: NotificationType.ORDER_CANCELLED,
+        title: 'Order cancelled',
+        body: 'Insufficient merchant balance at settlement.',
+        notifyDriver: false,
+        notifyMerchant: true,
+        notifyOps: true,
+      });
+      return;
+    }
+
+    if (assigned) {
+      await this.notificationsService.notifyOrderAssigned({
+        orderId,
+        merchantId: order.merchantId,
+        driverId: candidate.id,
+        driverName: candidate.fullName,
+        pickupAddress: order.pickupAddress,
+        deliveryAddress: order.deliveryAddress,
+        distanceKm: candidate.distanceKm,
+      });
+
+      this.logger.log(
+        `[MatchingProcessor] Order ${orderId} assigned to driver ${candidate.fullName}.`,
+      );
+    }
   }
 }

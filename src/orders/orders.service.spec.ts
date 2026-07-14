@@ -51,6 +51,9 @@ describe('OrdersService', () => {
   const service = new OrdersService(
     prisma as unknown as PrismaService,
     pricingService as unknown as PricingService,
+    {
+      notifyOrderLifecycle: jest.fn().mockResolvedValue(undefined),
+    } as never,
     dispatchQueue as unknown as Queue,
   );
 

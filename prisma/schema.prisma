@@ -43,6 +43,13 @@ enum UserRole {
   DRIVER_PARTNER
 }
 
+enum NotificationType {
+  ORDER_ASSIGNED
+  ORDER_PICKED_UP
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+}
+
 model Merchant {
   id           String        @id @default(uuid()) @db.Uuid
   companyName  String
@@ -77,10 +84,11 @@ model Driver {
   currentLng   Float
   vehicleId    String        @unique @db.Uuid
   vehicle      Vehicle       @relation(fields: [vehicleId], references: [id])
-  orders       Order[]
-  transactions Transaction[]
-  users        User[]
-  createdAt    DateTime      @default(now())
+  orders        Order[]
+  transactions  Transaction[]
+  users         User[]
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
 
   @@index([status])
   @@index([currentLat, currentLng])
@@ -108,6 +116,7 @@ model Order {
   createdByUserId     String?         @db.Uuid
   createdBy           User?           @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
   timeline            OrderTimeline[]
+  notifications       Notification[]
   createdAt           DateTime        @default(now())
 
   @@index([merchantId])
@@ -159,6 +168,7 @@ model User {
   driverId     String?   @db.Uuid
   driver       Driver?   @relation(fields: [driverId], references: [id])
   createdOrders Order[]  @relation("OrderCreatedBy")
+  notifications Notification[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -166,4 +176,25 @@ model User {
   @@index([merchantId])
   @@index([driverId])
   @@map("users")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driverId  String?          @db.Uuid
+  driver    Driver?          @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  orderId   String?          @db.Uuid
+  order     Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@index([driverId])
+  @@index([orderId])
+  @@map("notifications")
 }
