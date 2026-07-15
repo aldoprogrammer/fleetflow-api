@@ -53,6 +53,13 @@ describe('OrdersService', () => {
     pricingService as unknown as PricingService,
     {
       notifyOrderLifecycle: jest.fn().mockResolvedValue(undefined),
+      notifyTripAdvance: jest.fn().mockResolvedValue(undefined),
+      notifyProofPhotoUploaded: jest.fn().mockResolvedValue(undefined),
+      broadcastOrderUpdated: jest.fn().mockResolvedValue(undefined),
+    } as never,
+    {
+      uploadOrderPhoto: jest.fn(),
+      assertValidImageFile: jest.fn(),
     } as never,
     dispatchQueue as unknown as Queue,
   );

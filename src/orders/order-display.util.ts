@@ -18,7 +18,8 @@ export function resolveOrderPaymentStatus(status: OrderStatus): OrderPaymentStat
   return 'UNPAID';
 }
 
-export function formatOrderReference(orderId: string): string {  const compact = orderId.replace(/-/g, '');
+export function formatOrderReference(orderId: string): string {
+  const compact = orderId.replace(/-/g, '');
   return `#${compact.slice(-6).toUpperCase()}`;
 }
 

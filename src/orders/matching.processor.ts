@@ -70,6 +70,13 @@ export class MatchingProcessor extends WorkerHost {
       });
     });
 
+    await this.notificationsService.broadcastOrderUpdated({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      reason: 'status',
+    });
+
     const availableDrivers = await this.prisma.driver.findMany({
       where: {
         status: DriverStatus.AVAILABLE,
@@ -122,6 +129,12 @@ export class MatchingProcessor extends WorkerHost {
         notifyDriver: false,
         notifyMerchant: true,
         notifyOps: true,
+      });
+      await this.notificationsService.broadcastOrderUpdated({
+        orderId,
+        merchantId: order.merchantId,
+        driverId: order.assignedDriverId,
+        reason: 'status',
       });
       return;
     }
@@ -229,6 +242,13 @@ export class MatchingProcessor extends WorkerHost {
         pickupAddress: order.pickupAddress,
         deliveryAddress: order.deliveryAddress,
         distanceKm: candidate.distanceKm,
+      });
+
+      await this.notificationsService.broadcastOrderUpdated({
+        orderId,
+        merchantId: order.merchantId,
+        driverId: candidate.id,
+        reason: 'assigned',
       });
 
       this.logger.log(

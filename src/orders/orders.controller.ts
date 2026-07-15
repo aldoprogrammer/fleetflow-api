@@ -18,7 +18,11 @@ import {
 
   Req,
 
+  UploadedFile,
+
   UseGuards,
+
+  UseInterceptors,
 
 } from '@nestjs/common';
 
@@ -27,6 +31,10 @@ import {
   ApiBadRequestResponse,
 
   ApiBearerAuth,
+
+  ApiBody,
+
+  ApiConsumes,
 
   ApiCreatedResponse,
 
@@ -45,6 +53,9 @@ import {
   ApiUnauthorizedResponse,
 
 } from '@nestjs/swagger';
+
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 
 import { PERMISSIONS } from '@fleetflow/shared';
 
@@ -67,6 +78,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { EstimateOrderPriceDto } from './dto/estimate-order-price.dto';
 
 import { OrderResponseDto } from './dto/order-response.dto';
+import { OrderPhotoDto } from './dto/order-photo.dto';
+import { TripAdvanceDto } from './dto/trip-advance.dto';
+import { UploadOrderPhotoDto } from './dto/upload-order-photo.dto';
 
 import { resolveOrderAccessContext } from './interfaces/order-access.interface';
 
@@ -196,6 +210,78 @@ export class OrdersController {
 
 
 
+  @Post(':id/photos')
+
+  @HttpCode(HttpStatus.CREATED)
+
+  @RequireAnyPermission(
+
+    PERMISSIONS.ORDERS_READ_ASSIGNED,
+
+    PERMISSIONS.ORDERS_READ_ALL,
+
+    PERMISSIONS.FLEET_MANAGE,
+
+  )
+
+  @UseInterceptors(
+
+    FileInterceptor('file', {
+
+      storage: memoryStorage(),
+
+      limits: { fileSize: 8 * 1024 * 1024 },
+
+    }),
+
+  )
+
+  @ApiConsumes('multipart/form-data')
+
+  @ApiBody({
+
+    schema: {
+
+      type: 'object',
+
+      required: ['file', 'type'],
+
+      properties: {
+
+        file: { type: 'string', format: 'binary' },
+
+        type: { type: 'string', enum: ['DEPARTURE', 'DELIVERY'] },
+
+      },
+
+    },
+
+  })
+
+  @ApiOperation({ summary: 'Upload departure or delivery proof photo' })
+
+  @ApiCreatedResponse({ type: OrderPhotoDto })
+
+  async uploadOrderPhoto(
+
+    @Req() request: Request,
+
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+
+    @UploadedFile() file: Express.Multer.File,
+
+    @Body() dto: UploadOrderPhotoDto,
+
+  ): Promise<OrderPhotoDto> {
+
+    const access = resolveOrderAccessContext(request);
+
+    return this.ordersService.uploadOrderPhoto(access, id, dto.type, file);
+
+  }
+
+
+
   @Post(':id/pickup')
 
   @HttpCode(HttpStatus.OK)
@@ -220,11 +306,13 @@ export class OrdersController {
 
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
 
+    @Body() dto: TripAdvanceDto = {},
+
   ): Promise<OrderResponseDto> {
 
     const access = resolveOrderAccessContext(request);
 
-    return this.ordersService.markOrderPickedUp(access, id);
+    return this.ordersService.markOrderPickedUp(access, id, dto);
 
   }
 
@@ -254,11 +342,13 @@ export class OrdersController {
 
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
 
+    @Body() dto: TripAdvanceDto = {},
+
   ): Promise<OrderResponseDto> {
 
     const access = resolveOrderAccessContext(request);
 
-    return this.ordersService.markOrderDelivered(access, id);
+    return this.ordersService.markOrderDelivered(access, id, dto);
 
   }
 

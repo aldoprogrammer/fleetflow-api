@@ -201,6 +201,70 @@ DRAFT → PENDING → MATCHING → ASSIGNED → PICKED_UP → DELIVERED
 
 ---
 
+## POST `/orders/:id/photos`
+
+Upload a proof-of-departure (`DEPARTURE`) or proof-of-delivery (`DELIVERY`) photo.
+
+Auth: JWT with `orders:read:assigned` (assigned driver), or ops (`orders:read:all` / `fleet:manage`).
+
+### Request
+
+`multipart/form-data`
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `file` | binary | JPG / JPEG / PNG, max 8 MB |
+| `type` | string | `DEPARTURE` or `DELIVERY` |
+
+Storage: Cloudinary under `fleetflow/departures/booking-{id}/` or `fleetflow/deliveries/booking-{id}/`. Without Cloudinary env vars, files are saved under local `uploads/`.
+
+### Success Response — `201 Created`
+
+```json
+{
+  "id": "…",
+  "type": "DEPARTURE",
+  "url": "https://res.cloudinary.com/…/image.jpg",
+  "uploadedBy": "…",
+  "createdAt": "2026-07-15T08:00:00.000Z"
+}
+```
+
+Audit: `DEPARTURE_PHOTO_UPLOADED` or `DELIVERY_PHOTO_UPLOADED`.
+
+---
+
+## POST `/orders/:id/pickup`
+
+Advances `ASSIGNED` → `PICKED_UP` (Start Journey).
+
+Auth: assigned driver or ops.
+
+### Body (optional JSON)
+
+```json
+{ "overrideReason": "Driver device camera failure" }
+```
+
+| Actor | Rule |
+|-------|------|
+| Driver | Must have ≥ 1 `DEPARTURE` photo |
+| Ops | Photos optional; `overrideReason` required when photos are missing |
+
+---
+
+## POST `/orders/:id/deliver`
+
+Advances `PICKED_UP` → `DELIVERED` (Complete Booking).
+
+Same auth and body rules as pickup, with `DELIVERY` photos instead of `DEPARTURE`.
+
+Audit actions: `JOURNEY_STARTED`, `BOOKING_COMPLETED`, `MANUAL_COMPLETION_BY_OPS`, `COMPLETION_WITHOUT_PROOF_PHOTOS`.
+
+Order detail responses include `photos`, `departurePhotoCount`, and `deliveryPhotoCount`.
+
+---
+
 ## Dispatch Matching (Background Worker)
 
 The `dispatch-queue` BullMQ processor executes asynchronously after order creation:

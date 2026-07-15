@@ -23,6 +23,7 @@ const MERCHANT_ENTERPRISE_API_KEY =
   'ff_live_merchant_enterprise_9c2a5d1b';
 
 async function main(): Promise<void> {
+  await prisma.notification.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.orderTimeline.deleteMany();
   await prisma.order.deleteMany();

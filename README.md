@@ -25,6 +25,12 @@ pnpm run start:dev
 
 API: `http://localhost:3000/v1` · Swagger: `http://localhost:3000/docs`
 
+**Docker:** the API image migrates on start but does **not** auto-seed (seed deletes all orders and breaks saved logins). Seed manually when needed:
+
+```bash
+docker exec fleetflow-api sh -c "cd /app/fleetflow-api && pnpm exec prisma db seed"
+```
+
 ## Prisma commands
 
 > **Important:** `schema.prisma` lives in **`fleetflow-api/prisma/`**, not the monorepo root.  

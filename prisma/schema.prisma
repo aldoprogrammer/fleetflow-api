@@ -48,6 +48,22 @@ enum NotificationType {
   ORDER_PICKED_UP
   ORDER_DELIVERED
   ORDER_CANCELLED
+  DEPARTURE_PHOTO_UPLOADED
+  DELIVERY_PHOTO_UPLOADED
+}
+
+enum OrderPhotoType {
+  DEPARTURE
+  DELIVERY
+}
+
+enum OrderAuditAction {
+  DEPARTURE_PHOTO_UPLOADED
+  DELIVERY_PHOTO_UPLOADED
+  JOURNEY_STARTED
+  BOOKING_COMPLETED
+  MANUAL_COMPLETION_BY_OPS
+  COMPLETION_WITHOUT_PROOF_PHOTOS
 }
 
 model Merchant {
@@ -117,6 +133,8 @@ model Order {
   createdBy           User?           @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
   timeline            OrderTimeline[]
   notifications       Notification[]
+  photos              OrderPhoto[]
+  auditEvents         OrderAuditEvent[]
   createdAt           DateTime        @default(now())
 
   @@index([merchantId])
@@ -124,6 +142,38 @@ model Order {
   @@index([assignedDriverId])
   @@index([createdAt])
   @@map("orders")
+}
+
+model OrderPhoto {
+  id         String         @id @default(uuid()) @db.Uuid
+  orderId    String         @db.Uuid
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type       OrderPhotoType
+  url        String
+  uploadedBy String         @db.Uuid
+  uploader   User           @relation("OrderPhotoUploader", fields: [uploadedBy], references: [id])
+  createdAt  DateTime       @default(now())
+
+  @@index([orderId, type])
+  @@map("order_photos")
+}
+
+model OrderAuditEvent {
+  id             String           @id @default(uuid()) @db.Uuid
+  orderId        String           @db.Uuid
+  order          Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId         String           @db.Uuid
+  user           User             @relation("OrderAuditActor", fields: [userId], references: [id])
+  userRole       UserRole
+  action         OrderAuditAction
+  photoUrls      String[]         @default([])
+  overrideReason String?
+  createdAt      DateTime         @default(now())
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("order_audit_events")
 }
 
 model OrderTimeline {
@@ -169,6 +219,8 @@ model User {
   driver       Driver?   @relation(fields: [driverId], references: [id])
   createdOrders Order[]  @relation("OrderCreatedBy")
   notifications Notification[]
+  uploadedOrderPhotos OrderPhoto[] @relation("OrderPhotoUploader")
+  orderAuditEvents    OrderAuditEvent[] @relation("OrderAuditActor")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

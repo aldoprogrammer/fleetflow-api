@@ -9,6 +9,8 @@ import {
   type DeliverNotificationJobPayload,
 } from './constants/notification-queue.constants';
 import { NotificationRealtimeService } from './notification-realtime.service';
+import type { OrderUpdateReason } from './constants/realtime-event.types';
+import { formatOrderReference } from '../orders/order-display.util';
 
 const OPS_ROLES: UserRole[] = [
   UserRole.SUPERADMIN,
@@ -28,6 +30,23 @@ export interface OrderLifecycleNotifyInput {
   notifyDriver?: boolean;
   notifyMerchant?: boolean;
   notifyOps?: boolean;
+  /** Never notify this user (the actor who just changed status). */
+  excludeUserId?: string | null;
+}
+
+export interface NotifyTripAdvanceInput {
+  orderId: string;
+  merchantId: string;
+  driverId: string | null;
+  type: 'ORDER_PICKED_UP' | 'ORDER_DELIVERED';
+  title: string;
+  body: string;
+  /**
+   * When the assigned driver advances the trip → notify web (merchant/ops) only.
+   * When ops/merchant advances from web → notify the driver app only.
+   */
+  actorIsAssignedDriver: boolean;
+  actorUserId?: string | null;
 }
 
 /** @deprecated Prefer notifyOrderLifecycle */
@@ -49,6 +68,7 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     @InjectQueue(NOTIFICATION_QUEUE)
     private readonly notificationQueue: Queue<DeliverNotificationJobPayload>,
+    private readonly realtime: NotificationRealtimeService,
   ) {}
 
   async notifyOrderAssigned(input: NotifyOrderAssignedInput): Promise<void> {
@@ -76,6 +96,77 @@ export class NotificationsService {
       notifyDriver: false,
       notifyMerchant: true,
       notifyOps: true,
+    });
+  }
+
+  async notifyTripAdvance(input: NotifyTripAdvanceInput): Promise<void> {
+    // Always fan out to driver + merchant + ops so web and mobile stay in sync.
+    // Exclude only the actor (they already see the UI update from the API response).
+    await this.notifyOrderLifecycle({
+      orderId: input.orderId,
+      merchantId: input.merchantId,
+      driverId: input.driverId,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      notifyDriver: true,
+      notifyMerchant: true,
+      notifyOps: true,
+      excludeUserId: input.actorUserId,
+    });
+  }
+
+  /**
+   * Proof photo uploaded — notify the other side (web ↔ driver) so galleries
+   * and bells update in realtime.
+   */
+  async notifyProofPhotoUploaded(input: {
+    orderId: string;
+    merchantId: string;
+    driverId: string | null;
+    photoType: 'DEPARTURE' | 'DELIVERY';
+    actorIsAssignedDriver: boolean;
+    actorUserId?: string | null;
+  }): Promise<void> {
+    const ref = formatOrderReference(input.orderId);
+    const isDeparture = input.photoType === 'DEPARTURE';
+    const type = isDeparture
+      ? NotificationType.DEPARTURE_PHOTO_UPLOADED
+      : NotificationType.DELIVERY_PHOTO_UPLOADED;
+    const title = isDeparture
+      ? 'New before-pickup photo'
+      : 'New after-delivery photo';
+    const body = isDeparture
+      ? `Booking ${ref} has a new departure (before pickup) proof photo.`
+      : `Booking ${ref} has a new delivery (after delivery) proof photo.`;
+
+    if (input.actorIsAssignedDriver) {
+      await this.notifyOrderLifecycle({
+        orderId: input.orderId,
+        merchantId: input.merchantId,
+        driverId: input.driverId,
+        type,
+        title,
+        body,
+        notifyDriver: false,
+        notifyMerchant: true,
+        notifyOps: true,
+        excludeUserId: input.actorUserId,
+      });
+      return;
+    }
+
+    await this.notifyOrderLifecycle({
+      orderId: input.orderId,
+      merchantId: input.merchantId,
+      driverId: input.driverId,
+      type,
+      title,
+      body,
+      notifyDriver: true,
+      notifyMerchant: true,
+      notifyOps: true,
+      excludeUserId: input.actorUserId,
     });
   }
 
@@ -114,6 +205,10 @@ export class NotificationsService {
       for (const user of ops) {
         recipientIds.add(user.id);
       }
+    }
+
+    if (input.excludeUserId) {
+      recipientIds.delete(input.excludeUserId);
     }
 
     if (recipientIds.size === 0) {
@@ -159,6 +254,68 @@ export class NotificationsService {
     this.logger.log(
       `[Notifications] ${input.type} → ${recipientIds.size} user(s) for order ${input.orderId}`,
     );
+  }
+
+  async broadcastOrderUpdated(input: {
+    orderId: string;
+    merchantId: string;
+    driverId: string | null;
+    reason: OrderUpdateReason;
+  }): Promise<void> {
+    const recipientIds = await this.resolveOrderStakeholderUserIds({
+      merchantId: input.merchantId,
+      driverId: input.driverId,
+    });
+
+    const updatedAt = new Date().toISOString();
+    for (const userId of recipientIds) {
+      await this.realtime.publishOrderUpdated(userId, {
+        orderId: input.orderId,
+        merchantId: input.merchantId,
+        driverId: input.driverId,
+        reason: input.reason,
+        updatedAt,
+      });
+    }
+
+    this.logger.debug(
+      `[Realtime] order.updated (${input.reason}) → ${recipientIds.size} user(s) for order ${input.orderId}`,
+    );
+  }
+
+  private async resolveOrderStakeholderUserIds(input: {
+    merchantId: string;
+    driverId: string | null;
+  }): Promise<Set<string>> {
+    const recipientIds = new Set<string>();
+
+    if (input.driverId) {
+      const drivers = await this.prisma.user.findMany({
+        where: { driverId: input.driverId, isActive: true },
+        select: { id: true },
+      });
+      for (const user of drivers) {
+        recipientIds.add(user.id);
+      }
+    }
+
+    const merchants = await this.prisma.user.findMany({
+      where: { merchantId: input.merchantId, isActive: true },
+      select: { id: true },
+    });
+    for (const user of merchants) {
+      recipientIds.add(user.id);
+    }
+
+    const ops = await this.prisma.user.findMany({
+      where: { role: { in: OPS_ROLES }, isActive: true },
+      select: { id: true },
+    });
+    for (const user of ops) {
+      recipientIds.add(user.id);
+    }
+
+    return recipientIds;
   }
 
   async listForUser(

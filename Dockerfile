@@ -24,4 +24,7 @@ COPY --from=build /app/fleetflow-shared ./fleetflow-shared
 COPY --from=build /app/fleetflow-api ./fleetflow-api
 WORKDIR /app/fleetflow-api
 EXPOSE 3000
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm exec prisma db seed && node dist/main.js"]
+# Migrate only on start. Do NOT auto-seed — seed wipes orders/users and breaks persisted JWTs.
+# One-shot seed: docker exec fleetflow-api sh -c "cd /app/fleetflow-api && pnpm exec prisma db seed"
+# Or set SEED_ON_START=true for a fresh demo database.
+CMD ["sh", "-c", "pnpm exec prisma migrate deploy && if [ \"${SEED_ON_START:-false}\" = \"true\" ]; then pnpm exec prisma db seed; fi && node dist/main.js"]

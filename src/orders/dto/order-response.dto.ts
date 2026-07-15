@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus, UserRole, VehicleType } from '@prisma/client';
+import { OrderPhotoDto } from './order-photo.dto';
 
 export class OrderTimelineItemDto {
   @ApiProperty({ format: 'uuid' })
@@ -126,6 +127,15 @@ export class OrderResponseDto {
 
   @ApiProperty({ type: [OrderTimelineItemDto] })
   timeline!: OrderTimelineItemDto[];
+
+  @ApiProperty({ type: [OrderPhotoDto] })
+  photos!: OrderPhotoDto[];
+
+  @ApiProperty({ description: 'Count of uploaded departure proof photos.' })
+  departurePhotoCount!: number;
+
+  @ApiProperty({ description: 'Count of uploaded delivery proof photos.' })
+  deliveryPhotoCount!: number;
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;

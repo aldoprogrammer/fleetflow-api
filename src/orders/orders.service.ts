@@ -12,7 +12,7 @@ import {
 
 } from '@nestjs/common';
 
-import { DriverStatus, NotificationType, OrderStatus, UserRole, VehicleType } from '@prisma/client';
+import { DriverStatus, NotificationType, OrderAuditAction, OrderPhotoType, OrderStatus, UserRole, VehicleType } from '@prisma/client';
 
 import type { Queue } from 'bullmq';
 
@@ -31,7 +31,9 @@ import {
 
 import { CreateOrderDto } from './dto/create-order.dto';
 import { EstimateOrderPriceDto } from './dto/estimate-order-price.dto';
+import type { OrderPhotoDto } from './dto/order-photo.dto';
 import type { OrderResponseDto } from './dto/order-response.dto';
+import type { TripAdvanceDto } from './dto/trip-advance.dto';
 
 import {
 
@@ -45,6 +47,8 @@ import {
   assertCanAdvanceTrip,
   assertValidTransition,
 } from './interfaces/order-trip.interface';
+import { assertProofPhotosForTripAdvance } from './interfaces/order-proof.interface';
+import { PhotoStorageService } from '../storage/photo-storage.service';
 
 import { PERMISSIONS } from '@fleetflow/shared';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -99,6 +103,13 @@ type OrderDetailRecord = {
     note: string;
     createdAt: Date;
   }>;
+  photos: Array<{
+    id: string;
+    type: OrderPhotoType;
+    url: string;
+    uploadedBy: string;
+    createdAt: Date;
+  }>;
 };
 
 
@@ -113,6 +124,7 @@ export class OrdersService {
 
     private readonly pricingService: PricingService,
     private readonly notificationsService: NotificationsService,
+    private readonly photoStorageService: PhotoStorageService,
 
     @InjectQueue(DISPATCH_QUEUE)
 
@@ -439,6 +451,12 @@ export class OrdersService {
 
         },
 
+        photos: {
+
+          orderBy: { createdAt: 'asc' },
+
+        },
+
         assignedDriver: {
 
           include: {
@@ -568,6 +586,16 @@ export class OrdersService {
 
       timeline: order.timeline,
 
+      photos: (order.photos ?? []).map((photo) => this.mapOrderPhoto(photo)),
+
+      departurePhotoCount: (order.photos ?? []).filter(
+        (photo) => photo.type === OrderPhotoType.DEPARTURE,
+      ).length,
+
+      deliveryPhotoCount: (order.photos ?? []).filter(
+        (photo) => photo.type === OrderPhotoType.DELIVERY,
+      ).length,
+
       createdAt: order.createdAt,
 
     };
@@ -576,7 +604,115 @@ export class OrdersService {
 
 
 
-  async markOrderPickedUp(access: OrderAccessContext, orderId: string) {
+  async uploadOrderPhoto(
+    access: OrderAccessContext,
+    orderId: string,
+    type: OrderPhotoType,
+    file: Express.Multer.File,
+  ): Promise<OrderPhotoDto> {
+    if (access.mode !== 'jwt' || !access.user) {
+      throw new ForbiddenException('Proof photos require a signed-in user.');
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        assignedDriverId: true,
+        merchantId: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order ${orderId} not found.`);
+    }
+
+    if (!userCanReadOrder(access, order)) {
+      throw new ForbiddenException('You are not allowed to view this order.');
+    }
+
+    assertCanAdvanceTrip(access, order);
+
+    if (
+      type === OrderPhotoType.DEPARTURE &&
+      order.status !== OrderStatus.ASSIGNED
+    ) {
+      throw new BadRequestException(
+        'Departure photos can only be uploaded before the journey starts.',
+      );
+    }
+
+    if (
+      type === OrderPhotoType.DELIVERY &&
+      order.status !== OrderStatus.PICKED_UP
+    ) {
+      throw new BadRequestException(
+        'Delivery photos can only be uploaded while the trip is in progress.',
+      );
+    }
+
+    const url = await this.photoStorageService.uploadOrderPhoto(
+      orderId,
+      type,
+      file,
+    );
+
+    const photo = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.orderPhoto.create({
+        data: {
+          orderId,
+          type,
+          url,
+          uploadedBy: access.user!.id,
+        },
+      });
+
+      await this.recordAuditEvent(tx, {
+        orderId,
+        user: access.user!,
+        action:
+          type === OrderPhotoType.DEPARTURE
+            ? OrderAuditAction.DEPARTURE_PHOTO_UPLOADED
+            : OrderAuditAction.DELIVERY_PHOTO_UPLOADED,
+        photoUrls: [url],
+      });
+
+      return created;
+    });
+
+    await this.notificationsService.broadcastOrderUpdated({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      reason: 'photos',
+    });
+
+    const actorIsAssignedDriver = Boolean(
+      access.user?.driverId &&
+        order.assignedDriverId &&
+        access.user.driverId === order.assignedDriverId,
+    );
+
+    await this.notificationsService.notifyProofPhotoUploaded({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      photoType: type,
+      actorIsAssignedDriver,
+      actorUserId: access.user?.id ?? null,
+    });
+
+    return this.mapOrderPhoto(photo);
+  }
+
+
+
+  async markOrderPickedUp(
+    access: OrderAccessContext,
+    orderId: string,
+    dto: TripAdvanceDto = {},
+  ) {
 
     const order = await this.prisma.order.findUnique({
 
@@ -628,6 +764,48 @@ export class OrdersService {
 
 
 
+    if (!access.user) {
+
+      throw new ForbiddenException('Trip updates require a signed-in user.');
+
+    }
+
+
+
+    const departurePhotoCount = await this.prisma.orderPhoto.count({
+
+      where: { orderId, type: OrderPhotoType.DEPARTURE },
+
+    });
+
+
+
+    const proofDecision = assertProofPhotosForTripAdvance({
+
+      user: access.user,
+
+      assignedDriverId: order.assignedDriverId,
+
+      photoType: OrderPhotoType.DEPARTURE,
+
+      photoCount: departurePhotoCount,
+
+      overrideReason: dto.overrideReason,
+
+    });
+
+
+
+    const departurePhotos = await this.prisma.orderPhoto.findMany({
+
+      where: { orderId, type: OrderPhotoType.DEPARTURE },
+
+      select: { url: true },
+
+    });
+
+
+
     await this.prisma.$transaction(async (tx) => {
 
       await tx.order.update({
@@ -644,7 +822,11 @@ export class OrdersService {
 
               status: OrderStatus.PICKED_UP,
 
-              note: 'Parcel picked up — trip in progress.',
+              note: proofDecision.skippedProof
+
+                ? `Parcel picked up — trip in progress (ops override: ${dto.overrideReason?.trim()}).`
+
+                : 'Parcel picked up — trip in progress.',
 
             },
 
@@ -654,17 +836,50 @@ export class OrdersService {
 
       });
 
+
+
+      await this.recordAuditEvent(tx, {
+
+        orderId,
+
+        user: access.user!,
+
+        action: OrderAuditAction.JOURNEY_STARTED,
+
+        photoUrls: departurePhotos.map((photo) => photo.url),
+
+        overrideReason: proofDecision.skippedProof
+
+          ? dto.overrideReason?.trim()
+
+          : undefined,
+
+      });
+
     });
 
 
 
-    await this.notificationsService.notifyOrderLifecycle({
+    await this.notificationsService.notifyTripAdvance({
       orderId,
       merchantId: order.merchantId,
       driverId: order.assignedDriverId,
       type: NotificationType.ORDER_PICKED_UP,
       title: 'Parcel picked up',
       body: 'Order is in transit to the destination.',
+      actorIsAssignedDriver: Boolean(
+        access.user?.driverId &&
+          order.assignedDriverId &&
+          access.user.driverId === order.assignedDriverId,
+      ),
+      actorUserId: access.user?.id ?? null,
+    });
+
+    await this.notificationsService.broadcastOrderUpdated({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      reason: 'status',
     });
 
     return this.getOrderById(access, orderId);
@@ -673,7 +888,11 @@ export class OrdersService {
 
 
 
-  async markOrderDelivered(access: OrderAccessContext, orderId: string) {
+  async markOrderDelivered(
+    access: OrderAccessContext,
+    orderId: string,
+    dto: TripAdvanceDto = {},
+  ) {
 
     const order = await this.prisma.order.findUnique({
 
@@ -733,6 +952,48 @@ export class OrdersService {
 
 
 
+    if (!access.user) {
+
+      throw new ForbiddenException('Trip updates require a signed-in user.');
+
+    }
+
+
+
+    const deliveryPhotoCount = await this.prisma.orderPhoto.count({
+
+      where: { orderId, type: OrderPhotoType.DELIVERY },
+
+    });
+
+
+
+    const proofDecision = assertProofPhotosForTripAdvance({
+
+      user: access.user,
+
+      assignedDriverId: order.assignedDriverId,
+
+      photoType: OrderPhotoType.DELIVERY,
+
+      photoCount: deliveryPhotoCount,
+
+      overrideReason: dto.overrideReason,
+
+    });
+
+
+
+    const deliveryPhotos = await this.prisma.orderPhoto.findMany({
+
+      where: { orderId, type: OrderPhotoType.DELIVERY },
+
+      select: { url: true },
+
+    });
+
+
+
     await this.prisma.$transaction(async (tx) => {
 
       await tx.order.update({
@@ -749,7 +1010,11 @@ export class OrdersService {
 
               status: OrderStatus.DELIVERED,
 
-              note: 'Delivery completed successfully.',
+              note: proofDecision.skippedProof
+
+                ? `Delivery completed (ops override: ${dto.overrideReason?.trim()}).`
+
+                : 'Delivery completed successfully.',
 
             },
 
@@ -769,21 +1034,131 @@ export class OrdersService {
 
       });
 
+
+
+      await this.recordAuditEvent(tx, {
+
+        orderId,
+
+        user: access.user!,
+
+        action: proofDecision.skippedProof
+
+          ? OrderAuditAction.MANUAL_COMPLETION_BY_OPS
+
+          : OrderAuditAction.BOOKING_COMPLETED,
+
+        photoUrls: deliveryPhotos.map((photo) => photo.url),
+
+        overrideReason: proofDecision.skippedProof
+
+          ? dto.overrideReason?.trim()
+
+          : undefined,
+
+      });
+
+
+
+      if (proofDecision.skippedProof) {
+
+        await this.recordAuditEvent(tx, {
+
+          orderId,
+
+          user: access.user!,
+
+          action: OrderAuditAction.COMPLETION_WITHOUT_PROOF_PHOTOS,
+
+          photoUrls: [],
+
+          overrideReason: dto.overrideReason?.trim(),
+
+        });
+
+      }
+
     });
 
 
 
-    await this.notificationsService.notifyOrderLifecycle({
+    await this.notificationsService.notifyTripAdvance({
       orderId,
       merchantId: order.merchantId,
       driverId: order.assignedDriverId,
       type: NotificationType.ORDER_DELIVERED,
       title: 'Delivery completed',
       body: 'Booking finished successfully.',
+      actorIsAssignedDriver: Boolean(
+        access.user?.driverId &&
+          order.assignedDriverId &&
+          access.user.driverId === order.assignedDriverId,
+      ),
+      actorUserId: access.user?.id ?? null,
+    });
+
+    await this.notificationsService.broadcastOrderUpdated({
+      orderId,
+      merchantId: order.merchantId,
+      driverId: order.assignedDriverId,
+      reason: 'status',
     });
 
     return this.getOrderById(access, orderId);
 
+  }
+
+
+
+  private mapOrderPhoto(photo: {
+    id: string;
+    type: OrderPhotoType;
+    url: string;
+    uploadedBy: string;
+    createdAt: Date;
+  }): OrderPhotoDto {
+    return {
+      id: photo.id,
+      type: photo.type,
+      url: photo.url,
+      uploadedBy: photo.uploadedBy,
+      createdAt: photo.createdAt,
+    };
+  }
+
+  private async recordAuditEvent(
+    tx: {
+      orderAuditEvent: {
+        create: (args: {
+          data: {
+            orderId: string;
+            userId: string;
+            userRole: UserRole;
+            action: OrderAuditAction;
+            photoUrls: string[];
+            overrideReason: string | null;
+          };
+        }) => Promise<unknown>;
+      };
+    },
+    input: {
+      orderId: string;
+      user: AuthenticatedUser;
+      action: OrderAuditAction;
+      photoUrls?: string[];
+      overrideReason?: string;
+    },
+  ): Promise<void> {
+    await tx.orderAuditEvent.create({
+      data: {
+        orderId: input.orderId,
+        userId: input.user.id,
+        userRole: input.user.role as UserRole,
+        action: input.action,
+        photoUrls: input.photoUrls ?? [],
+        overrideReason: input.overrideReason ?? null,
+      },
+    });
   }
 
 
